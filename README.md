@@ -7,7 +7,7 @@ A [Claude Code](https://github.com/anthropics/claude-code) agent skill for devel
 ```bash
 # Clone to your Claude skills directory
 cd ~/.claude/skills
-git clone https://github.com/yetone/agent-skill-mowatch-dev.git
+git clone https://github.com/yetone/agent-skill-mowatch-dev.git mowatch-dev
 ```
 
 ## Usage
