@@ -1,13 +1,13 @@
-# Claude Skill: MoWatch Development
+# Agent Skill: MoWatch Development
 
-A [Claude Code](https://github.com/anthropics/claude-code) skill for developing watch faces and apps for MoWatch e-ink smartwatch.
+A [Claude Code](https://github.com/anthropics/claude-code) agent skill for developing watch faces and apps for MoWatch e-ink smartwatch.
 
 ## Installation
 
 ```bash
 # Clone to your Claude skills directory
 cd ~/.claude/skills
-git clone https://github.com/yetone/claude-skill-mowatch-dev.git mowatch-dev
+git clone https://github.com/yetone/agent-skill-mowatch-dev.git
 ```
 
 ## Usage
