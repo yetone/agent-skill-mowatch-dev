@@ -1,0 +1,3 @@
+rand = 0x759;
+srand = 0x76d;
+co_sprintf = 0x3841;

@@ -8,6 +8,25 @@ license: MIT
 
 Use this skill when developing watch faces or apps for MoWatch e-ink smartwatch.
 
+## SDK Files Location
+
+**IMPORTANT**: SDK source files are located in this skill's directory. Copy them to create a new project:
+
+```
+~/.claude/skills/mowatch-dev/
+├── sdk/
+│   ├── include/header.h       # SDK header - copy to include/
+│   └── libs/
+│       ├── init_datas.c       # API wrappers - copy to libs/
+│       └── syscall_gcc.txt    # Syscall addresses - copy to libs/
+└── templates/
+    ├── Makefile               # Build config - copy to gcc/
+    ├── app.ld                 # Linker script - copy to gcc/
+    └── createmwa.py           # Package creator - copy to gcc/
+```
+
+To create a new project, read and copy these files using the Read tool.
+
 ## Hardware Specifications
 
 - **Display**: 200x200 pixel monochrome e-ink
@@ -140,20 +159,19 @@ if (bitmap[y * byteWidth + x / 8] & (128 >> (x & 7))) {
 ```
 app_projects/
 ├── include/
-│   └── header.h              # SDK header (DO NOT MODIFY)
+│   └── header.h              # SDK header (from skill sdk/)
 ├── libs/
-│   ├── init_datas.c          # SDK init (DO NOT MODIFY)
-│   ├── tiny-json.c           # JSON library
-│   ├── syscall_gcc.txt       # Syscall definitions
-│   └── app.ld                # Default linker script
+│   ├── init_datas.c          # SDK init (from skill sdk/)
+│   ├── tiny-json.c           # JSON library (optional)
+│   └── syscall_gcc.txt       # Syscall definitions (from skill sdk/)
 └── app_yourapp/
     ├── code/
     │   ├── app_main.c        # Your main code
     │   └── graphics.h        # Your bitmap data (optional)
     └── gcc/
-        ├── Makefile
-        ├── app.ld            # Copy from libs/
-        └── createmwa.py      # Package creator
+        ├── Makefile          # From skill templates/
+        ├── app.ld            # From skill templates/
+        └── createmwa.py      # From skill templates/
 ```
 
 ## Complete API Reference
@@ -426,262 +444,6 @@ void app_init(intptr_t *draw_ptr_t, intptr_t *onkey_ptr_t,
 }
 ```
 
----
-
-## SDK Source Files (COMPLETE - Copy These Exactly)
-
-### gcc/app.ld (Linker Script)
-
-```ld
-MEMORY
-{
-    FLASH (rx)      : ORIGIN = 0x10050000, LENGTH = 40K
-    RAM (xrw)       : ORIGIN = 0x11001000, LENGTH = 4K
-}
-
-ENTRY(app_init)
-
-SECTIONS
-{
-    .text : ALIGN(4)
-    {
-        *(.text .text.*)
-        *(.rodata .rodata.* .constdata .constdata.*)
-        KEEP(*(.eh_frame*))
-        *(.glue_7)
-        *(.glue_7t)
-    } >FLASH
-
-    _sidata = LOADADDR(.data);
-
-    .data : ALIGN(4)
-    {
-        _sdata = . ;
-        *(.data .data.*)
-        . = ALIGN(4);
-        _edata = . ;
-    } >RAM AT>FLASH
-
-    .bss (NOLOAD) : ALIGN(4)
-    {
-        _sbss = .;
-        *(.bss .bss.*)
-        *(COMMON)
-        . = ALIGN(4);
-        _ebss = .;
-    } >RAM
-
-    .keep_section : ALIGN(4)
-    {
-        *(.keep_section)
-        KEEP(*(.keep_section*))
-    } >FLASH
-}
-```
-
-### gcc/Makefile (Complete)
-
-```makefile
-# ---------------------------------- #
-# Project name - CHANGE THIS         #
-# ---------------------------------- #
-PROJECT_NAME := MoWatchAPP
-
-# ---------------------------------- #
-# Path config                        #
-# ---------------------------------- #
-TOP_DIR     := ../..
-PROJECT_DIR := ../code
-OBJECT_DIR  := ./objects
-
-# ---------------------------------- #
-# Toolchain config                   #
-# ---------------------------------- #
-TOOLCHAIN := arm-none-eabi
-
-CC      := $(TOOLCHAIN)-gcc
-AS      := $(TOOLCHAIN)-as
-LD      := $(TOOLCHAIN)-ld
-OBJDUMP := $(TOOLCHAIN)-objdump
-OBJCOPY := $(TOOLCHAIN)-objcopy
-SIZE    := $(TOOLCHAIN)-size
-
-# ---------------------------------- #
-# ld/lib config                      #
-# ---------------------------------- #
-LD_SCRIPT := ./app.ld
-LD_C := $(TOP_DIR)/libs/syscall_gcc.txt
-
-# ---------------------------------- #
-# Source files config                #
-# ---------------------------------- #
-SRC_FILES += $(TOP_DIR)/libs/init_datas.c
-SRC_FILES += $(TOP_DIR)/libs/tiny-json.c
-SRC_FILES += $(PROJECT_DIR)/app_main.c
-
-INC_PATH += -I"$(TOP_DIR)/include"
-INC_PATH += -I"$(PROJECT_DIR)"
-
-# ----------------------------------- #
-# Objects files                       #
-# ----------------------------------- #
-BASE_SRC  = $(notdir $(SRC_FILES))
-BASE_OBJS = $(BASE_SRC:%.c=%.o)
-OBJS      = $(BASE_OBJS:%.o=$(OBJECT_DIR)/%.o)
-BASE_ElF  = $(OBJECT_DIR)/$(PROJECT_NAME).elf
-VPATH = $(dir $(SRC_FILES))
-
-# ---------------------------------- #
-# C flags                            #
-# ---------------------------------- #
-CFLAGS += -mcpu=cortex-m3
-CFLAGS += -mthumb
-CFLAGS += -O2
-CFLAGS += -fmessage-length=0 -fsigned-char
-CFLAGS += -ffunction-sections -fdata-sections
-CFLAGS += -g3
-CFLAGS += -std=gnu11
-
-# ---------------------------------- #
-# LD flags                           #
-# ---------------------------------- #
-LDFLAGS += -mcpu=cortex-m3
-LDFLAGS += -mthumb
-LDFLAGS += -O2
-LDFLAGS += -ffunction-sections -fdata-sections
-LDFLAGS += -g3
-LDFLAGS += -Xlinker --gc-sections
-LDFLAGS += --specs=nosys.specs -u _printf_float
-
-# ---------------------------------- #
-# Build targets                      #
-# ---------------------------------- #
-all: Target_Path Target_OBJS Target_ELF Target_DONE
-
-Target_Path:
-	@mkdir -p $(OBJECT_DIR)
-
-Target_OBJS: $(OBJS)
-
-$(OBJECT_DIR)/%.o: %.c
-	@echo "Compiling $<"
-	@$(CC) $(CFLAGS) $(INC_PATH) -c -o $@ $<
-
-Target_ELF: $(BASE_ElF)
-
-$(BASE_ElF): $(OBJS)
-	@$(CC) $(LDFLAGS) -T $(LD_SCRIPT) -T $(LD_C) -Wl,-Map=$(PROJECT_NAME).map -o $@ $^
-	@$(OBJCOPY) -O binary -S $@ $(PROJECT_NAME).bin
-	@echo "Created $(PROJECT_NAME).bin"
-
-Target_DONE:
-	@$(SIZE) $(BASE_ElF)
-	@echo "Build complete: $(PROJECT_NAME)"
-
-clean:
-	rm -rf $(OBJECT_DIR) *.bin *.map *.hex *.dis *.elf
-
-.PHONY: all clean Target_Path Target_OBJS Target_ELF Target_DONE
-```
-
-### gcc/createmwa.py (Complete)
-
-```python
-import re
-import os
-import hashlib
-import time
-
-# ============================================
-# CONFIGURATION - CHANGE THESE FOR YOUR APP
-# ============================================
-
-# Binary input filename (from make)
-inputbin = "MoWatchAPP.bin"
-
-# Output .mwa filename
-outputmwa = "SimpleWatch.mwa"
-
-# App icon: 48x48 bitmap, 288 bytes
-# Format: horizontal 8-point left-high-bit
-# Default icon (clock shape):
-appicon_bmp = [
-0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x7F,0xFE,0x00,0x00,0x00,0x03,0xFF,0xFF,
-0xC0,0x00,0x00,0x0F,0xFF,0xFF,0xF0,0x00,0x00,0x1F,0xFF,0xFF,0xF8,0x00,0x00,0x7F,
-0xFF,0xFF,0xFE,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0x00,0x01,0xFF,0xFF,0xFF,0xFF,0x80,
-0x03,0xFF,0xFF,0xFF,0xFF,0xC0,0x07,0xFF,0xFF,0xFF,0xFF,0xE0,0x07,0xFF,0xFF,0xFF,
-0xFF,0xE0,0x0F,0xFF,0xFF,0xFF,0xFF,0xF0,0x0F,0xFF,0xFC,0x3F,0xFF,0xF0,0x1F,0xFF,
-0xFC,0x3F,0xFF,0xF8,0x1F,0xFF,0xFC,0x3F,0xFF,0xF8,0x3F,0xFF,0xFC,0x3F,0xFF,0xFC,
-0x3F,0xFF,0xFC,0x3F,0xFF,0xFC,0x3F,0xFF,0xFC,0x3F,0xFF,0xFC,0x7F,0xFF,0xFC,0x3F,
-0xFF,0xFE,0x7F,0xFF,0xFC,0x3F,0xFF,0xFE,0x7F,0xFF,0xFC,0x3F,0xFF,0xFE,0x7F,0xFF,
-0xFC,0x3F,0xFF,0xFE,0x7F,0xFF,0xFC,0x3F,0xFF,0xFE,0x7F,0xFF,0xFC,0x00,0xFF,0xFE,
-0x7F,0xFF,0xFC,0x00,0x7F,0xFE,0x7F,0xFF,0xFC,0x00,0x7F,0xFE,0x7F,0xFF,0xFC,0x00,
-0x7F,0xFE,0x7F,0xFF,0xFF,0x00,0x7F,0xFE,0x7F,0xFF,0xFF,0x80,0xFF,0xFE,0x3F,0xFF,
-0xFF,0xFF,0xFF,0xFC,0x3F,0xFF,0xFF,0xFF,0xFF,0xFC,0x3F,0xFF,0xFF,0xFF,0xFF,0xFC,
-0x1F,0xFF,0xFF,0xFF,0xFF,0xF8,0x1F,0xFF,0xFF,0xFF,0xFF,0xF8,0x0F,0xFF,0xFF,0xFF,
-0xFF,0xF0,0x0F,0xFF,0xFF,0xFF,0xFF,0xF0,0x07,0xFF,0xFF,0xFF,0xFF,0xE0,0x07,0xFF,
-0xFF,0xFF,0xFF,0xE0,0x03,0xFF,0xFF,0xFF,0xFF,0xC0,0x01,0xFF,0xFF,0xFF,0xFF,0x80,
-0x00,0xFF,0xFF,0xFF,0xFF,0x00,0x00,0x7F,0xFF,0xFF,0xFE,0x00,0x00,0x1F,0xFF,0xFF,
-0xF8,0x00,0x00,0x0F,0xFF,0xFF,0xF0,0x00,0x00,0x03,0xFF,0xFF,0xC0,0x00,0x00,0x00,
-0x7F,0xFE,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-]
-
-# App slot (usually 1)
-app_slot = 1
-app_head_end = 0xFF
-
-# ============================================
-# DO NOT MODIFY BELOW THIS LINE
-# ============================================
-
-with open("MoWatchAPP.map", "r") as f:
-    lines = f.readlines()
-
-init_addr = 0
-pattern = re.compile(r"\s+(0x[0-9a-fA-F]+)\s+([a-zA-Z_][a-zA-Z0-9_]*)")
-for line in lines:
-    match = pattern.match(line)
-    if match:
-        address, name = match.groups()
-        if name == "app_init":
-            init_addr = int(address, 16)
-            break
-
-if init_addr & 1 == 0:
-    init_addr = init_addr | 1
-
-def generate_uuid():
-    timestamp = str(time.time()).encode()
-    hash_object = hashlib.md5()
-    hash_object.update(timestamp)
-    md5_hash = hash_object.hexdigest()
-    uuid = "{}{}{}{}{}".format(md5_hash[0:8], md5_hash[8:12], md5_hash[12:16], md5_hash[16:20], md5_hash[20:])
-    return uuid
-
-uuid = generate_uuid()
-
-with open(inputbin, "rb") as f:
-    appbin = f.read()
-
-if os.path.isfile(outputmwa):
-    os.remove(outputmwa)
-    print(f"Deleted existing {outputmwa}")
-
-with open(outputmwa, "wb+") as fi:
-    fi.write(uuid.encode("utf-8"))
-    fi.write(init_addr.to_bytes(4, "little"))
-    fi.write(app_slot.to_bytes(1, "little"))
-    fi.write(app_head_end.to_bytes(1, "little"))
-    for bit in appicon_bmp:
-        fi.write(bit.to_bytes(1, "little"))
-    for byte in appbin:
-        fi.write(byte.to_bytes(1, "little"))
-
-print(f"Created {outputmwa} - copy to watch /apps/ folder")
-```
-
----
-
 ## Building with Docker
 
 1. **Create Dockerfile** (in SDK root, same level as app_projects):
@@ -710,26 +472,34 @@ docker run --rm -v "/path/to/app_projects:/build" mowatch-sdk make -C /build/app
 cd gcc && python3 createmwa.py
 ```
 
----
-
 ## Quick Start: Create New Project
 
+1. Read SDK files from skill directory:
+   - `~/.claude/skills/mowatch-dev/sdk/include/header.h`
+   - `~/.claude/skills/mowatch-dev/sdk/libs/init_datas.c`
+   - `~/.claude/skills/mowatch-dev/sdk/libs/syscall_gcc.txt`
+
+2. Read template files:
+   - `~/.claude/skills/mowatch-dev/templates/Makefile`
+   - `~/.claude/skills/mowatch-dev/templates/app.ld`
+   - `~/.claude/skills/mowatch-dev/templates/createmwa.py`
+
+3. Create project structure and copy files:
 ```bash
-# In app_projects directory
-mkdir -p app_mywatch/code app_mywatch/gcc
-
+mkdir -p app_projects/include app_projects/libs
+mkdir -p app_projects/app_mywatch/code app_projects/app_mywatch/gcc
+# Copy SDK files to include/ and libs/
+# Copy templates to gcc/
 # Create app_main.c in code/
-# Copy Makefile, app.ld, createmwa.py to gcc/ (from above)
-# Edit createmwa.py to set outputmwa name
-
-# Build
-docker run --rm -v "$(pwd):/build" mowatch-sdk make -C /build/app_mywatch/gcc
-
-# Package
-cd app_mywatch/gcc && python3 createmwa.py
 ```
 
----
+4. Edit `createmwa.py` to set `outputmwa` name
+
+5. Build:
+```bash
+docker run --rm -v "$(pwd)/app_projects:/build" mowatch-sdk make -C /build/app_mywatch/gcc
+cd app_projects/app_mywatch/gcc && python3 createmwa.py
+```
 
 ## Image Processing for E-ink (Python)
 
@@ -773,8 +543,6 @@ def image_to_c_array(img, var_name):
     return "\n".join(lines)
 ```
 
----
-
 ## Installation to Watch
 
 1. Enable USB mode on MoWatch
@@ -782,8 +550,6 @@ def image_to_c_array(img, var_name):
 3. Copy `.mwa` file to `/apps/` folder
 4. Safely eject: `diskutil eject "/Volumes/NO NAME"`
 5. Select watch face from watch menu
-
----
 
 ## Tips
 
@@ -794,377 +560,3 @@ def image_to_c_array(img, var_name):
 - **Layout**: Leave margins from screen edges for HUD-style designs
 - **Testing**: Use `watch_app_log()` for debugging
 - **Battery**: Check `watch_app_battpercent()` to show battery status
-
----
-
-# Appendix: Complete SDK Source Files
-
-These files must be placed in the SDK directory structure. Create them exactly as shown.
-
-## include/header.h
-
-```c
-#ifndef HEADER_H
-#define HEADER_H
-#include <stdint.h>
-
-#define SCREEN_WIDTH   200
-#define SCREEN_HEIGHT  200
-
-#define BLACK   0
-#define WHITE   0xFF
-#define GREY    0x80
-
-#define MODE_EMPTY  0
-#define MODE_FILL   1
-
-#define FA_READ           0x01
-#define FA_WRITE          0x02
-#define FA_OPEN_EXISTING  0x00
-#define FA_CREATE_NEW     0x04
-#define FA_CREATE_ALWAYS  0x08
-#define FA_OPEN_ALWAYS    0x10
-#define FA_OPEN_APPEND    0x30
-
-#define SCREEN_TYPE_EINK 0
-#define SCREEN_TYPE_MONO 1
-#define SCREEN_TYPE SCREEN_TYPE_EINK
-
-typedef enum UPDAT_TYPE {
-    FULL_UPDATE,
-    PART_UPDATE,
-    NONE_UPDATE,
-} UpdateType;
-
-typedef enum MBUTTON_TYPE {
-    KEY_NULL,
-    KEY_CENTER,
-    KEY_UP,
-    KEY_DOWN,
-    KEY_CENTER_UP,
-    KEY_UP_CENTER,
-    KEY_CENTER_DOWN,
-    KEY_DOWN_CENTER,
-    KEY_UP_DOWN,
-    KEY_DOWN_UP,
-    KEY_BACK,
-} ButtonType;
-
-typedef struct TODAYDATA {
-    uint16_t moonicon;
-    uint16_t pressure;
-    uint16_t humidity;
-    uint8_t sunraise[6];
-    uint8_t sunset[6];
-    uint8_t lunar[16];
-} TodayData;
-
-typedef struct WEATHER {
-    uint8_t date;
-    char day_temp;
-    char night_temp;
-    uint16_t day_icon;
-    uint16_t night_icon;
-} Weather;
-
-typedef enum WEATHERDAY {
-    TOTDAY,
-    TOMORROW,
-    AFTERTOMOROW,
-    DAY_COUNT,
-} WeatherDay;
-
-typedef enum ROTATE {
-    ROTATE_0,
-    ROTATE_90,
-    ROTATE_180,
-    ROTATE_270,
-} Rotate;
-
-typedef enum BLUESTTE {
-    DISCONNECTED,
-    CONNECTING,
-    CONNECTED,
-} BlueState;
-
-__attribute__((section(".keep_section"))) void onDraw(void);
-__attribute__((section(".keep_section"))) UpdateType onUpdate(int delta);
-__attribute__((section(".keep_section"))) UpdateType onKey(ButtonType key);
-__attribute__((section(".keep_section"))) void app_init(intptr_t *draw_ptr_t, intptr_t *onkey_ptr_t, intptr_t* onupdate_ptr_t, intptr_t* func_arr);
-
-void __initialize_datas(const intptr_t* func_arr);
-
-void *m_malloc(uint32_t size);
-void m_free(void *ptr);
-int rand(void);
-void srand(unsigned int seed);
-void co_sprintf(char *out, const char *format, ...);
-uint16_t utf_len(const unsigned char *chr);
-
-void create_msg_dialog(const uint8_t* title, const uint8_t* msg, void (*submit)(uint8_t ok));
-void create_menu_dialog(const char* title, const char** menu_item_names, const uint8_t count, void (*submit)(uint8_t confirm));
-void create_picker_dialog(uint8_t num, const uint8_t* nums, const uint8_t count, void (*submit)(uint8_t data));
-uint8_t watch_app_isweather_ok(void);
-uint8_t watch_app_battpercent(void);
-TodayData watch_app_getToday(void);
-Weather watch_app_getweather(WeatherDay day);
-BlueState watch_app_bluestate(void);
-void watch_app_http_req(const char* url, void(req_callback)(char*));
-void watch_app_log(char* log);
-void watch_app_exit(void);
-uint32_t watch_app_read_file(const uint8_t* file_name, uint8_t* buffer, uint32_t len, uint32_t seekofs);
-uint32_t watch_app_write_file(const uint8_t* file_name, uint8_t* buffer, uint32_t len, uint32_t seekofs, uint8_t fa_mode);
-uint8_t watch_app_delete_file(const uint8_t* file_name);
-uint8_t watch_app_mkdir(const uint8_t* dir);
-
-void set_update_interval(uint32_t interval);
-uint32_t get_update_interval(void);
-
-void eink_clear(uint16_t color);
-void eink_drawpixel(uint16_t x, uint16_t y, uint16_t color);
-void eink_drawline(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t color);
-void eink_drawdashedline(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t Color);
-void eink_drawrect(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t color, uint8_t fill_mode);
-void eink_drawcircle(int x_center, int y_center, int radius, int color, int fill_mode);
-void eink_draw_bmp(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t data[], uint16_t color, uint8_t transparent);
-void eink_set_rotate(Rotate rotate);
-void get_weather_icon(uint16_t iconidx, uint8_t *buffer);
-uint16_t eink_drawstr(uint16_t x, uint16_t y, const unsigned char *chr, uint16_t size, uint16_t color);
-uint16_t eink_drawchstr(uint16_t x, uint16_t y, const unsigned char *chr, uint16_t color);
-uint16_t eink_draw_rectstr(const unsigned char *chr, uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t color);
-
-int RTC_getYear(void);
-int RTC_getMon(void);
-int RTC_getDay(void);
-int RTC_getHour(void);
-int RTC_getMin(void);
-int RTC_getSec(void);
-int RTC_getWeek(void);
-int RTC_getTimeStamp(void);
-
-#endif
-```
-
-## libs/syscall_gcc.txt
-
-```
-rand = 0x759;
-srand = 0x76d;
-co_sprintf = 0x3841;
-```
-
-## libs/init_datas.c
-
-```c
-#include "header.h"
-#include <stdint.h>
-
-enum FUNC_TAGS {
-    tag_watch_app_battpercent,
-    tag_watch_app_http_req,
-    tag_watch_app_log,
-    tag_watch_app_exit,
-    tag_watch_app_mkdir,
-    tag_watch_app_write_file,
-    tag_watch_app_read_file,
-    tag_watch_app_delete_file,
-    tag_watch_app_bluestate,
-    tag_watch_app_getweather,
-    tag_watch_app_getToday,
-    tag_watch_app_isweather_ok,
-    tag_eink_clear,
-    tag_eink_drawpixel,
-    tag_eink_drawline,
-    tag_eink_drawdashedline,
-    tag_eink_drawrect,
-    tag_eink_drawcircle,
-    tag_eink_draw_bmp,
-    tag_eink_drawstr,
-    tag_eink_drawchstr,
-    tag_eink_draw_rectstr,
-    tag_RTC_getYear,
-    tag_RTC_getMon,
-    tag_RTC_getDay,
-    tag_RTC_getHour,
-    tag_RTC_getMin,
-    tag_RTC_getSec,
-    tag_RTC_getWeek,
-    tag_RTC_getTimeStamp,
-    tag_create_msg_dialog,
-    tag_create_menu_dialog,
-    tag_os_malloc,
-    tag_os_free,
-    tag_utf_len,
-    tag_create_picker_dialog,
-    tag_eink_set_rotate,
-    tag_set_interval,
-    tag_get_interval,
-    tag_get_weather_icon,
-    tag_beep_on,
-    tag_beep_off,
-    tag_buzzer,
-    tag_count,
-};
-
-const intptr_t *func_array;
-
-extern uint32_t _sidata;
-extern uint32_t _sdata;
-extern uint32_t _edata;
-extern uint32_t _sbss;
-extern uint32_t _ebss;
-
-void __initialize_datas(const intptr_t *func_arr) {
-    uint32_t *src = &_sidata;
-    uint32_t *dst = &_sdata;
-    uint32_t *end = &_edata;
-    while(dst < end) { *dst++ = *src++; }
-    src = &_sbss;
-    end = &_ebss;
-    while(src < end) { *src++ = 0; }
-    func_array = func_arr;
-}
-
-typedef void* (*func_malloc_ptr_t)(uint32_t);
-typedef void (*func_eink_clear_ptr_t)(uint16_t);
-typedef void (*func_free_ptr_t)(void*);
-typedef uint16_t (*func_utf_len_ptr_t)(const unsigned char*);
-typedef void (*func_get_weather_icon_ptr_t)(uint16_t iconidx, uint8_t *buffer);
-typedef void (*func_msgdialog_ptr_t)(const uint8_t* title, const uint8_t* msg, void (*submit)(uint8_t ok));
-typedef void (*func_pickerdialog_ptr_t)(uint8_t num, const uint8_t* nums, uint8_t count, void (*submit)(uint8_t data));
-typedef void (*func_menudialog_ptr_t)(const char* title, const char** menu_item_names, const uint8_t count, void (*submit)(uint8_t confirm));
-typedef uint8_t (*func_get_ptr_t)(void);
-typedef TodayData (*func_gettoday_ptr_t)(void);
-typedef Weather (*func_getweather_ptr_t)(WeatherDay);
-typedef BlueState (*func_getblue_ptr_t)(void);
-typedef void (*func_httpreq_ptr_t)(const char* url, void(req_callback)(char*));
-typedef void (*func_void_ptr_t)(void);
-typedef void (*func_enable_ptr_t)(uint8_t);
-typedef void (*func_set_interval_ptr_t)(uint32_t);
-typedef uint32_t (*func_get_interval_ptr_t)(void);
-
-void set_update_interval(uint32_t interval) {
-    return ((func_set_interval_ptr_t)(intptr_t)func_array[tag_set_interval])(interval);
-}
-uint32_t get_update_interval(void) {
-    return ((func_get_interval_ptr_t)(intptr_t)func_array[tag_get_interval])();
-}
-void get_weather_icon(uint16_t iconidx, uint8_t *buffer) {
-    return ((func_get_weather_icon_ptr_t)(intptr_t)func_array[tag_get_weather_icon])(iconidx, buffer);
-}
-void eink_set_rotate(uint8_t rotate) {
-    return ((func_enable_ptr_t)(intptr_t)func_array[tag_eink_set_rotate])(rotate);
-}
-void create_picker_dialog(uint8_t num, const uint8_t* nums, const uint8_t count, void (*submit)(uint8_t data)) {
-    return ((func_pickerdialog_ptr_t)(intptr_t)func_array[tag_create_picker_dialog])(num, nums, count, submit);
-}
-void *m_malloc(uint32_t size) {
-    return ((func_malloc_ptr_t)(intptr_t)func_array[tag_os_malloc])(size);
-}
-void m_free(void *ptr) {
-    return ((func_free_ptr_t)(intptr_t)func_array[tag_os_free])(ptr);
-}
-uint16_t utf_len(const unsigned char *chr) {
-    return ((func_utf_len_ptr_t)(intptr_t)func_array[tag_utf_len])(chr);
-}
-void create_msg_dialog(const uint8_t* title, const uint8_t* msg, void (*submit)(uint8_t ok)) {
-    return ((func_msgdialog_ptr_t)(intptr_t)func_array[tag_create_msg_dialog])(title, msg, submit);
-}
-void create_menu_dialog(const char* title, const char** menu_item_names, const uint8_t count, void (*submit)(uint8_t confirm)) {
-    return ((func_menudialog_ptr_t)(intptr_t)func_array[tag_create_menu_dialog])(title, menu_item_names, count, submit);
-}
-uint8_t watch_app_isweather_ok(void) {
-    return ((func_get_ptr_t)(intptr_t)func_array[tag_watch_app_isweather_ok])();
-}
-uint8_t watch_app_battpercent(void) {
-    return ((func_get_ptr_t)(intptr_t)func_array[tag_watch_app_battpercent])();
-}
-TodayData watch_app_getToday(void) {
-    return ((func_gettoday_ptr_t)(intptr_t)func_array[tag_watch_app_getToday])();
-}
-Weather watch_app_getweather(WeatherDay day) {
-    return ((func_getweather_ptr_t)(intptr_t)func_array[tag_watch_app_getweather])(day);
-}
-BlueState watch_app_bluestate(void) {
-    return ((func_getblue_ptr_t)(intptr_t)func_array[tag_watch_app_bluestate])();
-}
-void watch_app_http_req(const char* url, void(req_callback)(char*)) {
-    return ((func_httpreq_ptr_t)(intptr_t)func_array[tag_watch_app_http_req])(url, req_callback);
-}
-typedef void (*func_applog_ptr_t)(char* log);
-void watch_app_log(char* log) {
-    return ((func_applog_ptr_t)(intptr_t)func_array[tag_watch_app_log])(log);
-}
-void watch_app_exit(void) {
-    return ((func_void_ptr_t)(intptr_t)func_array[tag_watch_app_exit])();
-}
-typedef uint32_t (*func_readfile_ptr_t)(const uint8_t* file_name, uint8_t* buffer, uint32_t len, uint32_t seekofs);
-typedef uint32_t (*func_writefile_ptr_t)(const uint8_t* file_name, uint8_t* buffer, uint32_t len, uint32_t seekofs, uint8_t fa_mode);
-typedef uint8_t (*func_mkdel_ptr_t)(const uint8_t* file_name);
-uint32_t watch_app_read_file(const uint8_t* file_name, uint8_t* buffer, uint32_t len, uint32_t seekofs) {
-    return ((func_readfile_ptr_t)(intptr_t)func_array[tag_watch_app_read_file])(file_name, buffer, len, seekofs);
-}
-uint32_t watch_app_write_file(const uint8_t* file_name, uint8_t* buffer, uint32_t len, uint32_t seekofs, uint8_t fa_mode) {
-    return ((func_writefile_ptr_t)(intptr_t)func_array[tag_watch_app_write_file])(file_name, buffer, len, seekofs, fa_mode);
-}
-uint8_t watch_app_mkdir(const uint8_t* dir) {
-    return ((func_mkdel_ptr_t)(intptr_t)func_array[tag_watch_app_mkdir])(dir);
-}
-uint8_t watch_app_delete_file(const uint8_t* file_name) {
-    return ((func_mkdel_ptr_t)(intptr_t)func_array[tag_watch_app_delete_file])(file_name);
-}
-void eink_clear(uint16_t color) {
-    return ((func_eink_clear_ptr_t)(intptr_t)func_array[tag_eink_clear])(color);
-}
-typedef void (*func_drawpixel_ptr_t)(uint16_t x, uint16_t y, uint16_t color);
-void eink_drawpixel(uint16_t x, uint16_t y, uint16_t color) {
-    return ((func_drawpixel_ptr_t)(intptr_t)func_array[tag_eink_drawpixel])(x, y, color);
-}
-typedef void (*func_drawline_ptr_t)(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t color);
-void eink_drawline(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t color) {
-    return ((func_drawline_ptr_t)(intptr_t)func_array[tag_eink_drawline])(start_x, start_y, end_x, end_y, color);
-}
-void eink_drawdashedline(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t color) {
-    return ((func_drawline_ptr_t)(intptr_t)func_array[tag_eink_drawdashedline])(start_x, start_y, end_x, end_y, color);
-}
-typedef void (*func_drawrect_ptr_t)(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t color, uint8_t fill_mode);
-void eink_drawrect(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y, uint16_t color, uint8_t fill_mode) {
-    return ((func_drawrect_ptr_t)(intptr_t)func_array[tag_eink_drawrect])(start_x, start_y, end_x, end_y, color, fill_mode);
-}
-typedef void (*func_drawcircle_ptr_t)(int x_center, int y_center, int radius, int color, int fill_mode);
-void eink_drawcircle(int x_center, int y_center, int radius, int color, int fill_mode) {
-    return ((func_drawcircle_ptr_t)(intptr_t)func_array[tag_eink_drawcircle])(x_center, y_center, radius, color, fill_mode);
-}
-typedef void (*func_drawbmp_ptr_t)(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t data[], uint16_t color, uint8_t transparent);
-void eink_draw_bmp(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t data[], uint16_t color, uint8_t transparent) {
-    return ((func_drawbmp_ptr_t)(intptr_t)func_array[tag_eink_draw_bmp])(x, y, w, h, data, color, transparent);
-}
-typedef uint16_t (*func_drawstr_ptr_t)(uint16_t x, uint16_t y, const unsigned char *chr, uint16_t size, uint16_t color);
-uint16_t eink_drawstr(uint16_t x, uint16_t y, const unsigned char *chr, uint16_t size, uint16_t color) {
-    return ((func_drawstr_ptr_t)(intptr_t)func_array[tag_eink_drawstr])(x, y, chr, size, color);
-}
-typedef uint16_t (*func_drawchstr_ptr_t)(uint16_t x, uint16_t y, const unsigned char *chr, uint16_t color);
-uint16_t eink_drawchstr(uint16_t x, uint16_t y, const unsigned char *chr, uint16_t color) {
-    return ((func_drawchstr_ptr_t)(intptr_t)func_array[tag_eink_drawchstr])(x, y, chr, color);
-}
-typedef uint16_t (*func_drawrectstr_ptr_t)(const unsigned char *chr, uint16_t start_x, uint16_t start_y, uint16_t stop_x, uint16_t stop_y, uint16_t color);
-uint16_t eink_draw_rectstr(const unsigned char *chr, uint16_t start_x, uint16_t start_y, uint16_t stop_x, uint16_t stop_y, uint16_t color) {
-    return ((func_drawrectstr_ptr_t)(intptr_t)func_array[tag_eink_draw_rectstr])(chr, start_x, start_y, stop_x, stop_y, color);
-}
-typedef int(*func_rtc_ptr_t)(void);
-int RTC_getDay(void) { return ((func_rtc_ptr_t)(intptr_t)func_array[tag_RTC_getDay])(); }
-int RTC_getHour(void) { return ((func_rtc_ptr_t)(intptr_t)func_array[tag_RTC_getHour])(); }
-int RTC_getMin(void) { return ((func_rtc_ptr_t)(intptr_t)func_array[tag_RTC_getMin])(); }
-int RTC_getMon(void) { return ((func_rtc_ptr_t)(intptr_t)func_array[tag_RTC_getMon])(); }
-int RTC_getSec(void) { return ((func_rtc_ptr_t)(intptr_t)func_array[tag_RTC_getSec])(); }
-int RTC_getTimeStamp(void) { return ((func_rtc_ptr_t)(intptr_t)func_array[tag_RTC_getTimeStamp])(); }
-int RTC_getWeek(void) { return ((func_rtc_ptr_t)(intptr_t)func_array[tag_RTC_getWeek])(); }
-int RTC_getYear(void) { return ((func_rtc_ptr_t)(intptr_t)func_array[tag_RTC_getYear])(); }
-```
-
-## libs/tiny-json.c
-
-Note: This is a third-party JSON library. For basic watch faces, you may not need it.
-The Makefile includes it by default. See https://github.com/rafagafe/tiny-json for full source.
-
-For simple projects, you can create an empty stub file or download from the GitHub repo above
