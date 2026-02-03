@@ -149,7 +149,7 @@ app_projects/
 └── app_yourapp/
     ├── code/
     │   ├── app_main.c        # Your main code
-    │   └── graphics.h        # Your bitmap data
+    │   └── graphics.h        # Your bitmap data (optional)
     └── gcc/
         ├── Makefile
         ├── app.ld            # Copy from libs/
@@ -376,45 +376,25 @@ void app_init(intptr_t *draw_ptr_t, intptr_t *onkey_ptr_t,
 ## Complete Minimal Example
 
 ```c
-// app_main.c - Simple digital clock
+// app_main.c - Simple digital clock using eink_drawstr
 #include "header.h"
-#include <string.h>
-
-// 20x32 pixel digit bitmaps (0-9)
-#define NUM_WIDTH 20
-#define NUM_HEIGHT 32
-const unsigned char NUM_0[] = { /* bitmap data */ };
-// ... NUM_1 through NUM_9 ...
-
-void draw_digit(int x, int y, int digit) {
-    const unsigned char* bitmaps[] = {NUM_0, NUM_1, NUM_2, NUM_3, NUM_4,
-                                       NUM_5, NUM_6, NUM_7, NUM_8, NUM_9};
-    eink_draw_bmp(x, y, NUM_WIDTH, NUM_HEIGHT, bitmaps[digit], BLACK, 0);
-}
-
-void draw_time(int x, int y) {
-    int hour = RTC_getHour();
-    int min = RTC_getMin();
-
-    draw_digit(x, y, hour / 10);
-    draw_digit(x + NUM_WIDTH + 2, y, hour % 10);
-
-    // Draw colon
-    eink_drawrect(x + NUM_WIDTH*2 + 6, y + 10, x + NUM_WIDTH*2 + 11, y + 15, BLACK, MODE_FILL);
-    eink_drawrect(x + NUM_WIDTH*2 + 6, y + 18, x + NUM_WIDTH*2 + 11, y + 23, BLACK, MODE_FILL);
-
-    draw_digit(x + NUM_WIDTH*2 + 16, y, min / 10);
-    draw_digit(x + NUM_WIDTH*3 + 18, y, min % 10);
-}
 
 void onDraw(void) {
     eink_clear(WHITE);
-    draw_time(30, 84);  // Center the time display
 
-    // Show battery
-    char buf[16];
-    co_sprintf(buf, "%d%%", watch_app_battpercent());
-    eink_drawstr(170, 5, (unsigned char*)buf, 12, BLACK);
+    char buf[32];
+
+    // Draw time (large, centered)
+    co_sprintf(buf, "%02d:%02d", RTC_getHour(), RTC_getMin());
+    eink_drawstr(50, 80, (unsigned char*)buf, 32, BLACK);
+
+    // Draw date
+    co_sprintf(buf, "%04d-%02d-%02d", RTC_getYear(), RTC_getMon(), RTC_getDay());
+    eink_drawstr(40, 130, (unsigned char*)buf, 16, BLACK);
+
+    // Draw battery
+    co_sprintf(buf, "BAT:%d%%", watch_app_battpercent());
+    eink_drawstr(140, 5, (unsigned char*)buf, 12, BLACK);
 }
 
 UpdateType onKey(ButtonType key) {
@@ -429,7 +409,7 @@ UpdateType onUpdate(int delta) {
     if (lastmin != RTC_getMin()) {
         lastmin = RTC_getMin();
         if (RTC_getMin() % 5 == 0) {
-            return FULL_UPDATE;  // Full refresh every 5 minutes
+            return FULL_UPDATE;
         }
         return PART_UPDATE;
     }
@@ -446,9 +426,265 @@ void app_init(intptr_t *draw_ptr_t, intptr_t *onkey_ptr_t,
 }
 ```
 
+---
+
+## SDK Source Files (COMPLETE - Copy These Exactly)
+
+### gcc/app.ld (Linker Script)
+
+```ld
+MEMORY
+{
+    FLASH (rx)      : ORIGIN = 0x10050000, LENGTH = 40K
+    RAM (xrw)       : ORIGIN = 0x11001000, LENGTH = 4K
+}
+
+ENTRY(app_init)
+
+SECTIONS
+{
+    .text : ALIGN(4)
+    {
+        *(.text .text.*)
+        *(.rodata .rodata.* .constdata .constdata.*)
+        KEEP(*(.eh_frame*))
+        *(.glue_7)
+        *(.glue_7t)
+    } >FLASH
+
+    _sidata = LOADADDR(.data);
+
+    .data : ALIGN(4)
+    {
+        _sdata = . ;
+        *(.data .data.*)
+        . = ALIGN(4);
+        _edata = . ;
+    } >RAM AT>FLASH
+
+    .bss (NOLOAD) : ALIGN(4)
+    {
+        _sbss = .;
+        *(.bss .bss.*)
+        *(COMMON)
+        . = ALIGN(4);
+        _ebss = .;
+    } >RAM
+
+    .keep_section : ALIGN(4)
+    {
+        *(.keep_section)
+        KEEP(*(.keep_section*))
+    } >FLASH
+}
+```
+
+### gcc/Makefile (Complete)
+
+```makefile
+# ---------------------------------- #
+# Project name - CHANGE THIS         #
+# ---------------------------------- #
+PROJECT_NAME := MoWatchAPP
+
+# ---------------------------------- #
+# Path config                        #
+# ---------------------------------- #
+TOP_DIR     := ../..
+PROJECT_DIR := ../code
+OBJECT_DIR  := ./objects
+
+# ---------------------------------- #
+# Toolchain config                   #
+# ---------------------------------- #
+TOOLCHAIN := arm-none-eabi
+
+CC      := $(TOOLCHAIN)-gcc
+AS      := $(TOOLCHAIN)-as
+LD      := $(TOOLCHAIN)-ld
+OBJDUMP := $(TOOLCHAIN)-objdump
+OBJCOPY := $(TOOLCHAIN)-objcopy
+SIZE    := $(TOOLCHAIN)-size
+
+# ---------------------------------- #
+# ld/lib config                      #
+# ---------------------------------- #
+LD_SCRIPT := ./app.ld
+LD_C := $(TOP_DIR)/libs/syscall_gcc.txt
+
+# ---------------------------------- #
+# Source files config                #
+# ---------------------------------- #
+SRC_FILES += $(TOP_DIR)/libs/init_datas.c
+SRC_FILES += $(TOP_DIR)/libs/tiny-json.c
+SRC_FILES += $(PROJECT_DIR)/app_main.c
+
+INC_PATH += -I"$(TOP_DIR)/include"
+INC_PATH += -I"$(PROJECT_DIR)"
+
+# ----------------------------------- #
+# Objects files                       #
+# ----------------------------------- #
+BASE_SRC  = $(notdir $(SRC_FILES))
+BASE_OBJS = $(BASE_SRC:%.c=%.o)
+OBJS      = $(BASE_OBJS:%.o=$(OBJECT_DIR)/%.o)
+BASE_ElF  = $(OBJECT_DIR)/$(PROJECT_NAME).elf
+VPATH = $(dir $(SRC_FILES))
+
+# ---------------------------------- #
+# C flags                            #
+# ---------------------------------- #
+CFLAGS += -mcpu=cortex-m3
+CFLAGS += -mthumb
+CFLAGS += -O2
+CFLAGS += -fmessage-length=0 -fsigned-char
+CFLAGS += -ffunction-sections -fdata-sections
+CFLAGS += -g3
+CFLAGS += -std=gnu11
+
+# ---------------------------------- #
+# LD flags                           #
+# ---------------------------------- #
+LDFLAGS += -mcpu=cortex-m3
+LDFLAGS += -mthumb
+LDFLAGS += -O2
+LDFLAGS += -ffunction-sections -fdata-sections
+LDFLAGS += -g3
+LDFLAGS += -Xlinker --gc-sections
+LDFLAGS += --specs=nosys.specs -u _printf_float
+
+# ---------------------------------- #
+# Build targets                      #
+# ---------------------------------- #
+all: Target_Path Target_OBJS Target_ELF Target_DONE
+
+Target_Path:
+	@mkdir -p $(OBJECT_DIR)
+
+Target_OBJS: $(OBJS)
+
+$(OBJECT_DIR)/%.o: %.c
+	@echo "Compiling $<"
+	@$(CC) $(CFLAGS) $(INC_PATH) -c -o $@ $<
+
+Target_ELF: $(BASE_ElF)
+
+$(BASE_ElF): $(OBJS)
+	@$(CC) $(LDFLAGS) -T $(LD_SCRIPT) -T $(LD_C) -Wl,-Map=$(PROJECT_NAME).map -o $@ $^
+	@$(OBJCOPY) -O binary -S $@ $(PROJECT_NAME).bin
+	@echo "Created $(PROJECT_NAME).bin"
+
+Target_DONE:
+	@$(SIZE) $(BASE_ElF)
+	@echo "Build complete: $(PROJECT_NAME)"
+
+clean:
+	rm -rf $(OBJECT_DIR) *.bin *.map *.hex *.dis *.elf
+
+.PHONY: all clean Target_Path Target_OBJS Target_ELF Target_DONE
+```
+
+### gcc/createmwa.py (Complete)
+
+```python
+import re
+import os
+import hashlib
+import time
+
+# ============================================
+# CONFIGURATION - CHANGE THESE FOR YOUR APP
+# ============================================
+
+# Binary input filename (from make)
+inputbin = "MoWatchAPP.bin"
+
+# Output .mwa filename
+outputmwa = "SimpleWatch.mwa"
+
+# App icon: 48x48 bitmap, 288 bytes
+# Format: horizontal 8-point left-high-bit
+# Default icon (clock shape):
+appicon_bmp = [
+0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x7F,0xFE,0x00,0x00,0x00,0x03,0xFF,0xFF,
+0xC0,0x00,0x00,0x0F,0xFF,0xFF,0xF0,0x00,0x00,0x1F,0xFF,0xFF,0xF8,0x00,0x00,0x7F,
+0xFF,0xFF,0xFE,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0x00,0x01,0xFF,0xFF,0xFF,0xFF,0x80,
+0x03,0xFF,0xFF,0xFF,0xFF,0xC0,0x07,0xFF,0xFF,0xFF,0xFF,0xE0,0x07,0xFF,0xFF,0xFF,
+0xFF,0xE0,0x0F,0xFF,0xFF,0xFF,0xFF,0xF0,0x0F,0xFF,0xFC,0x3F,0xFF,0xF0,0x1F,0xFF,
+0xFC,0x3F,0xFF,0xF8,0x1F,0xFF,0xFC,0x3F,0xFF,0xF8,0x3F,0xFF,0xFC,0x3F,0xFF,0xFC,
+0x3F,0xFF,0xFC,0x3F,0xFF,0xFC,0x3F,0xFF,0xFC,0x3F,0xFF,0xFC,0x7F,0xFF,0xFC,0x3F,
+0xFF,0xFE,0x7F,0xFF,0xFC,0x3F,0xFF,0xFE,0x7F,0xFF,0xFC,0x3F,0xFF,0xFE,0x7F,0xFF,
+0xFC,0x3F,0xFF,0xFE,0x7F,0xFF,0xFC,0x3F,0xFF,0xFE,0x7F,0xFF,0xFC,0x00,0xFF,0xFE,
+0x7F,0xFF,0xFC,0x00,0x7F,0xFE,0x7F,0xFF,0xFC,0x00,0x7F,0xFE,0x7F,0xFF,0xFC,0x00,
+0x7F,0xFE,0x7F,0xFF,0xFF,0x00,0x7F,0xFE,0x7F,0xFF,0xFF,0x80,0xFF,0xFE,0x3F,0xFF,
+0xFF,0xFF,0xFF,0xFC,0x3F,0xFF,0xFF,0xFF,0xFF,0xFC,0x3F,0xFF,0xFF,0xFF,0xFF,0xFC,
+0x1F,0xFF,0xFF,0xFF,0xFF,0xF8,0x1F,0xFF,0xFF,0xFF,0xFF,0xF8,0x0F,0xFF,0xFF,0xFF,
+0xFF,0xF0,0x0F,0xFF,0xFF,0xFF,0xFF,0xF0,0x07,0xFF,0xFF,0xFF,0xFF,0xE0,0x07,0xFF,
+0xFF,0xFF,0xFF,0xE0,0x03,0xFF,0xFF,0xFF,0xFF,0xC0,0x01,0xFF,0xFF,0xFF,0xFF,0x80,
+0x00,0xFF,0xFF,0xFF,0xFF,0x00,0x00,0x7F,0xFF,0xFF,0xFE,0x00,0x00,0x1F,0xFF,0xFF,
+0xF8,0x00,0x00,0x0F,0xFF,0xFF,0xF0,0x00,0x00,0x03,0xFF,0xFF,0xC0,0x00,0x00,0x00,
+0x7F,0xFE,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+]
+
+# App slot (usually 1)
+app_slot = 1
+app_head_end = 0xFF
+
+# ============================================
+# DO NOT MODIFY BELOW THIS LINE
+# ============================================
+
+with open("MoWatchAPP.map", "r") as f:
+    lines = f.readlines()
+
+init_addr = 0
+pattern = re.compile(r"\s+(0x[0-9a-fA-F]+)\s+([a-zA-Z_][a-zA-Z0-9_]*)")
+for line in lines:
+    match = pattern.match(line)
+    if match:
+        address, name = match.groups()
+        if name == "app_init":
+            init_addr = int(address, 16)
+            break
+
+if init_addr & 1 == 0:
+    init_addr = init_addr | 1
+
+def generate_uuid():
+    timestamp = str(time.time()).encode()
+    hash_object = hashlib.md5()
+    hash_object.update(timestamp)
+    md5_hash = hash_object.hexdigest()
+    uuid = "{}{}{}{}{}".format(md5_hash[0:8], md5_hash[8:12], md5_hash[12:16], md5_hash[16:20], md5_hash[20:])
+    return uuid
+
+uuid = generate_uuid()
+
+with open(inputbin, "rb") as f:
+    appbin = f.read()
+
+if os.path.isfile(outputmwa):
+    os.remove(outputmwa)
+    print(f"Deleted existing {outputmwa}")
+
+with open(outputmwa, "wb+") as fi:
+    fi.write(uuid.encode("utf-8"))
+    fi.write(init_addr.to_bytes(4, "little"))
+    fi.write(app_slot.to_bytes(1, "little"))
+    fi.write(app_head_end.to_bytes(1, "little"))
+    for bit in appicon_bmp:
+        fi.write(bit.to_bytes(1, "little"))
+    for byte in appbin:
+        fi.write(byte.to_bytes(1, "little"))
+
+print(f"Created {outputmwa} - copy to watch /apps/ folder")
+```
+
+---
+
 ## Building with Docker
 
-1. **Create Dockerfile** (in SDK root):
+1. **Create Dockerfile** (in SDK root, same level as app_projects):
 ```dockerfile
 FROM ubuntu:22.04
 RUN apt-get update && apt-get install -y \
@@ -474,54 +710,26 @@ docker run --rm -v "/path/to/app_projects:/build" mowatch-sdk make -C /build/app
 cd gcc && python3 createmwa.py
 ```
 
-## Makefile Template
+---
 
-```makefile
-PROJECT_NAME := MoWatchAPP
-TOP_DIR     := ../..
-PROJECT_DIR := ../code
-OBJECT_DIR  := ./objects
+## Quick Start: Create New Project
 
-TOOLCHAIN := arm-none-eabi
-CC      := $(TOOLCHAIN)-gcc
-OBJCOPY := $(TOOLCHAIN)-objcopy
-SIZE    := $(TOOLCHAIN)-size
+```bash
+# In app_projects directory
+mkdir -p app_mywatch/code app_mywatch/gcc
 
-LD   := ./app.ld
-LD_C := $(TOP_DIR)/libs/syscall_gcc.txt
+# Create app_main.c in code/
+# Copy Makefile, app.ld, createmwa.py to gcc/ (from above)
+# Edit createmwa.py to set outputmwa name
 
-# Add your source files here
-SRC_FILES += $(TOP_DIR)/libs/init_datas.c
-SRC_FILES += $(TOP_DIR)/libs/tiny-json.c
-SRC_FILES += $(PROJECT_DIR)/app_main.c
+# Build
+docker run --rm -v "$(pwd):/build" mowatch-sdk make -C /build/app_mywatch/gcc
 
-INC_PATH += -I"$(TOP_DIR)/include"
-INC_PATH += -I"$(PROJECT_DIR)"
-
-CFLAGS += -mcpu=cortex-m3 -mthumb -O2 -ffunction-sections -fdata-sections -std=gnu11
-LDFLAGS += -mcpu=cortex-m3 -mthumb -O2 -ffunction-sections -fdata-sections
-LDFLAGS += -Xlinker --gc-sections --specs=nosys.specs
-
-# ... rest of Makefile (see SDK example)
+# Package
+cd app_mywatch/gcc && python3 createmwa.py
 ```
 
-## createmwa.py Configuration
-
-Edit `createmwa.py` to customize your app:
-
-```python
-# Output filename
-outputmwa = "YourApp.mwa"
-
-# App icon: 48x48 bitmap, 288 bytes
-# Format: horizontal 8-point left-high-bit
-appicon_bmp = [
-    0x00, 0x00, ...  # 288 bytes total
-]
-
-# Slot number (usually 1)
-app_slot = 1
-```
+---
 
 ## Image Processing for E-ink (Python)
 
@@ -529,22 +737,14 @@ app_slot = 1
 
 ```python
 from PIL import Image, ImageFilter
-import numpy as np
 
 def process_for_eink(img_path, output_size=(120, 120)):
     img = Image.open(img_path).convert('RGB')
     img = img.resize(output_size, Image.Resampling.LANCZOS)
-
-    # Convert to grayscale
     gray = img.convert('L')
-
-    # Edge detection for line art effect
     edges = gray.filter(ImageFilter.FIND_EDGES)
-
-    # Threshold to 1-bit
     threshold = 128
     result = edges.point(lambda p: 0 if p > threshold else 255)
-
     return result
 
 def image_to_c_array(img, var_name):
@@ -561,32 +761,19 @@ def image_to_c_array(img, var_name):
                 x = bx * 8 + bit
                 if x < width:
                     idx = y * width + x
-                    if pixels[idx] < 128:  # Black pixel
+                    if pixels[idx] < 128:
                         byte |= (128 >> bit)
             data.append(byte)
 
-    # Format as C array
     lines = [f"const unsigned char {var_name}[{len(data)}] = {{"]
     for i in range(0, len(data), 15):
         chunk = data[i:i+15]
         lines.append("    " + ", ".join(f"0x{b:02X}" for b in chunk) + ",")
     lines.append("};")
-
     return "\n".join(lines)
 ```
 
-### Skin color detection for avatars:
-
-```python
-def is_skin_color(r, g, b):
-    """Detect skin tones to keep face area clean"""
-    return (r > 170 and g > 130 and b > 110 and
-            r > b and r > g - 40)
-
-def is_blue_background(r, g, b):
-    """Detect blue background for removal"""
-    return (b > 180 and r < 80 and g < 180 and b > r + 100)
-```
+---
 
 ## Installation to Watch
 
@@ -595,6 +782,8 @@ def is_blue_background(r, g, b):
 3. Copy `.mwa` file to `/apps/` folder
 4. Safely eject: `diskutil eject "/Volumes/NO NAME"`
 5. Select watch face from watch menu
+
+---
 
 ## Tips
 
